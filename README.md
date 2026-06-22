@@ -1,41 +1,67 @@
 # notify-hub
 
-將 Google Sheet 的財務摘要送到 Telegram。Apps Script 負責偵測與去重，部署在 PythonAnywhere 的 Flask API 負責驗證、預算計算、訊息格式化及 Telegram 發送。
+A reusable notification service that sends Google Sheets budget summaries to Telegram.
 
-## 資料來源
+Google Forms supplies the source data, Google Sheets calculates the summary, a bound Apps Script detects updates, and a Flask API hosted on PythonAnywhere validates and formats each notification before delivering it through the Telegram Bot API.
 
-綁定的 Apps Script 會從 gid `543845934` 讀取：
+## Architecture
 
-| 範圍 | 內容 |
+```text
+Google Form
+    ↓ form submission
+Google Sheet
+    ↓ calculated summary
+Bound Apps Script
+    ↓ authenticated POST /notify
+Flask on PythonAnywhere
+    ↓ Telegram Bot API
+Telegram
+```
+
+## Features
+
+- Handles Google Form submissions, direct Sheet edits, and structural changes.
+- Deduplicates unchanged summaries using Apps Script properties.
+- Prevents concurrent duplicate sends with an Apps Script lock.
+- Retries transient network errors, HTTP 429 responses, and server errors.
+- Validates shared-secret authentication and request payloads.
+- Calculates monthly and cumulative weekly budget balances.
+- Uses `Decimal` with round-half-up currency precision.
+- Keeps the Telegram Bot Token and recipient chat ID server-side.
+- Provides a lightweight health endpoint for deployment checks.
+
+## Data contract
+
+The bound watcher reads the following cells from the configured sheet:
+
+| Range | Value |
 | --- | --- |
-| `M2` | 總支出 |
-| `N2` | 總收入 |
-| `O2` | 結餘 |
-| `P2:Q6` | 依序為交、食、日、保險、運及其金額 |
+| `M2` | Total expenses |
+| `N2` | Total income |
+| `O2` | Balance |
+| `P2:Q6` | Category names and amounts in this order: 交, 食, 日, 保險, 運 |
 
-月預算固定為 €538，每週額度固定為 €100。第 22 日至月底一律視為第 4 週；週預算只扣除「日＋食」。
+The current budget policy is fixed in `budget_calculator.py`:
 
-## 本機執行
+- Monthly budget: EUR 538
+- Weekly base allowance: EUR 100
+- Budget timezone: `Europe/Berlin`
+- Days 22 through the end of the month remain week 4
+- Weekly spending includes only the 食 and 日 categories
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-dev.txt
-export NOTIFY_API_SECRET='replace-with-a-long-random-secret'
-export TELEGRAM_BOT_TOKEN='replace-with-bot-token'
-export TELEGRAM_CHAT_ID='replace-with-chat-id'
-flask --app app run
+## API
+
+### Health check
+
+```http
+GET /health
 ```
 
-執行測試：
-
-```bash
-pytest
+```json
+{"status": "ok"}
 ```
 
-健康檢查：`GET /health`
-
-通知 API：
+### Send a notification
 
 ```http
 POST /notify
@@ -57,46 +83,64 @@ X-Notify-Secret: <shared-secret>
 }
 ```
 
-## Telegram 設定
+Successful response:
 
-1. 在 Telegram 對 `@BotFather` 傳送 `/newbot`，完成後保存 Bot Token。
-2. 使用預定接收通知的帳號開啟新 Bot 並傳送任意訊息。
-3. 開啟 `https://api.telegram.org/bot<BOT_TOKEN>/getUpdates`，從回應的 `message.chat.id` 取得 chat ID。
-4. 不要將 Bot Token、chat ID 或 shared secret commit 到 repository。
-
-## PythonAnywhere 部署
-
-1. 建立免費帳號及新的 Flask Web App，將本專案上傳至 home directory。
-2. 建立 virtualenv，執行 `pip install -r requirements.txt`，並在 Web 頁面指定該 virtualenv。
-3. 在 Web App 的 WSGI configuration file 中，必須先設定環境變數，再 import app：
-
-```python
-import os
-import sys
-
-project_home = '/home/<username>/notify-hub'
-if project_home not in sys.path:
-    sys.path.insert(0, project_home)
-
-os.environ['NOTIFY_API_SECRET'] = '<long-random-secret>'
-os.environ['TELEGRAM_BOT_TOKEN'] = '<bot-token>'
-os.environ['TELEGRAM_CHAT_ID'] = '<chat-id>'
-
-from app import app as application
+```json
+{"status": "ok", "message_id": 12345}
 ```
 
-4. Reload Web App，先確認 `https://<username>.pythonanywhere.com/health` 回傳 `{"status":"ok"}`。
-5. WSGI configuration file 含有機密資料，不應加入 repository 或貼到公開位置。
+## Local development
 
-## Apps Script 安裝
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
 
-1. 在目標 Sheet 選擇「擴充功能 → Apps Script」。
-2. 將 `sheet-watchers/amount-tracker.gs` 貼入綁定專案。
-3. 在「專案設定 → 指令碼屬性」加入：
-   - `NOTIFY_API_URL`：`https://<username>.pythonanywhere.com/notify`
-   - `NOTIFY_API_SECRET`：與 PythonAnywhere 相同的 shared secret
-4. 儲存並重新整理 Sheet。
-5. 從「Notify Hub」選單執行「安裝觸發器並立即推播」，完成 Google 授權。
-6. 確認 Telegram 收到首次通知。之後相同的摘要不會重複發送。
+export NOTIFY_API_SECRET='replace-with-a-long-random-secret'
+export TELEGRAM_BOT_TOKEN='replace-with-bot-token'
+export TELEGRAM_CHAT_ID='replace-with-chat-id'
 
-Apps Script 的 installable edit trigger 處理人工輸入，change trigger補充工作表結構變更。API 只有在成功送出 Telegram 後，watcher 才會保存去重狀態。
+flask --app app run
+```
+
+Run the tests:
+
+```bash
+pytest
+```
+
+Do not commit real credentials. The application reads all secrets from environment variables, while the Apps Script reads the API URL and shared secret from Script Properties.
+
+## Project structure
+
+```text
+notify-hub/
+├── app.py
+├── budget_calculator.py
+├── telegram_sender.py
+├── requirements.txt
+├── requirements-dev.txt
+├── sheet-watchers/
+│   └── amount-tracker.gs
+├── tests/
+├── OPERATIONS_GUIDE.zh-TW.md
+├── notify-hub-project-guide.md
+└── notify-hub-project-guide.html
+```
+
+## Documentation
+
+- [Traditional Chinese operations and deployment guide](OPERATIONS_GUIDE.zh-TW.md)
+- [Complete project record and implementation guide (Markdown)](notify-hub-project-guide.md)
+- [Complete project record and implementation guide (HTML)](notify-hub-project-guide.html)
+
+## Security
+
+- Never commit the Telegram Bot Token, chat ID, or shared API secret.
+- Keep the recipient chat ID fixed on the server instead of accepting arbitrary request values.
+- Rotate both the WSGI environment value and Apps Script property if the shared secret is exposed.
+- Revoke and replace the Bot Token through BotFather if it is exposed.
+
+## License
+
+No license has been specified for this project.
