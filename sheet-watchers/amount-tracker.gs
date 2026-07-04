@@ -4,6 +4,7 @@ var NOTIFY_HUB = {
   sheetId: 543845934,
   stateKey: 'NOTIFY_HUB_LAST_SUCCESS',
   categoryNames: ['交', '食', '日', '保險', '運'],
+  categoryRange: 'P2:Q7',
   retryDelaysMs: [0, 1000, 2000]
 };
 
@@ -118,23 +119,45 @@ function readBudgetSummary_() {
     .getRange('M2:O2')
     .getValues()[0];
   var rows = sheet
-    .getRange('P2:Q6')
+    .getRange(NOTIFY_HUB.categoryRange)
     .getValues();
   var categories = {};
+  var seen = {};
 
   rows.forEach(function(row, index) {
-    var expected = NOTIFY_HUB.categoryNames[index];
     var actual = String(row[0]).trim();
-    if (actual !== expected) {
+    var value = row[1];
+    var rowNumber = index + 2;
+
+    if (!actual) {
+      return;
+    }
+    if (actual === '分類' || actual === 'Category') {
+      return;
+    }
+    if (NOTIFY_HUB.categoryNames.indexOf(actual) === -1) {
       throw new Error(
-        'Category mismatch at row ' + (index + 2)
+        'Unknown category at row ' + rowNumber + ': ' + actual
       );
     }
-    var cellName = 'Q' + (index + 2);
-    categories[expected] = roundMoney_(
-      row[1],
+    if (seen[actual]) {
+      throw new Error(
+        'Duplicate category at row ' + rowNumber + ': ' + actual
+      );
+    }
+
+    seen[actual] = true;
+    var cellName = 'Q' + rowNumber;
+    categories[actual] = roundMoney_(
+      value,
       cellName
     );
+  });
+
+  NOTIFY_HUB.categoryNames.forEach(function(name) {
+    if (!seen[name]) {
+      categories[name] = 0;
+    }
   });
 
   return {

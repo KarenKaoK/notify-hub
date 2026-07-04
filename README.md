@@ -39,7 +39,7 @@ The bound watcher reads the following cells from the configured sheet:
 | `M2` | Total expenses |
 | `N2` | Total income |
 | `O2` | Balance |
-| `P2:Q6` | Category names and amounts in this order: 交, 食, 日, 保險, 運 |
+| `P2:Q7` | Category names and amounts for 交, 食, 日, 保險, 運; `P2:Q2` may be a header row, and missing categories default to 0 |
 
 The current budget policy is fixed in `budget_calculator.py`:
 
@@ -131,6 +131,7 @@ notify-hub/
 ## Documentation
 
 - [Traditional Chinese operations and deployment guide](OPERATIONS_GUIDE.zh-TW.md)
+- [Actual deployment configuration notes (Traditional Chinese)](DEPLOYMENT_SETUP_NOTES.zh-TW.md)
 - [Complete project record and implementation guide (Markdown)](notify-hub-project-guide.md)
 - [Complete project record and implementation guide (HTML)](notify-hub-project-guide.html)
 
