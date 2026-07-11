@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Mapping
 
 
-CATEGORY_NAMES = ("交", "食", "日", "保險", "運")
+WEEKLY_SPENDING_CATEGORIES = ("日", "食")
 MONTHLY_BUDGET = Decimal("538.00")
 WEEKLY_ALLOWANCE = Decimal("100.00")
 CENT = Decimal("0.01")
@@ -45,14 +45,18 @@ def calculate_budget(categories: Mapping[str, object], now: datetime) -> BudgetR
     if not isinstance(categories, Mapping):
         raise ValidationError("categories must be an object")
 
-    missing = [name for name in CATEGORY_NAMES if name not in categories]
-    if missing:
-        raise ValidationError(f"categories is missing: {', '.join(missing)}")
+    if not categories:
+        raise ValidationError("categories must not be empty")
 
-    parsed = {
-        name: money(categories[name], f"categories.{name}")
-        for name in CATEGORY_NAMES
-    }
+    parsed: dict[str, Decimal] = {}
+    for raw_name, value in categories.items():
+        name = str(raw_name).strip()
+        if not name:
+            raise ValidationError("category names must not be empty")
+        if name in parsed:
+            raise ValidationError(f"duplicate category: {name}")
+        parsed[name] = money(value, f"categories.{name}")
+
     monthly_remaining = money(
         MONTHLY_BUDGET - sum(parsed.values(), Decimal("0")),
         "monthly_remaining",
@@ -61,7 +65,13 @@ def calculate_budget(categories: Mapping[str, object], now: datetime) -> BudgetR
     cumulative_allowance = money(
         WEEKLY_ALLOWANCE * week_number, "cumulative_allowance"
     )
-    cumulative_spent = money(parsed["日"] + parsed["食"], "cumulative_spent")
+    cumulative_spent = money(
+        sum(
+            parsed.get(name, Decimal("0"))
+            for name in WEEKLY_SPENDING_CATEGORIES
+        ),
+        "cumulative_spent",
+    )
     weekly_remaining = money(
         cumulative_allowance - cumulative_spent, "weekly_remaining"
     )
@@ -96,7 +106,8 @@ def format_budget_message(
     now: datetime,
 ) -> str:
     category_lines = "\n".join(
-        f"{name}：{format_eur(result.categories[name])}" for name in CATEGORY_NAMES
+        f"{name}：{format_eur(amount)}"
+        for name, amount in result.categories.items()
     )
     return (
         "📊 預算更新\n\n"

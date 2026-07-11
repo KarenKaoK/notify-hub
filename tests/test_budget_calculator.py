@@ -15,6 +15,7 @@ CATEGORIES = {
     "交": 126,
     "食": 372.14,
     "日": 167.51,
+    "住": 0,
     "保險": 5.8,
     "運": 64.97,
 }
@@ -48,6 +49,22 @@ def test_confirmed_budget_example():
     assert result.weekly_remaining == Decimal("-239.65")
 
 
+def test_accepts_future_categories_without_code_changes():
+    categories = dict(CATEGORIES)
+    categories["醫療"] = 12.34
+    result = calculate_budget(categories, datetime(2026, 6, 21))
+    assert result.categories["醫療"] == Decimal("12.34")
+    assert result.monthly_remaining == Decimal("-210.76")
+    assert result.cumulative_spent == Decimal("539.65")
+
+
+def test_missing_weekly_categories_count_as_zero():
+    result = calculate_budget({"住": 500}, datetime(2026, 6, 21))
+    assert result.monthly_remaining == Decimal("38.00")
+    assert result.cumulative_spent == Decimal("0.00")
+    assert result.weekly_remaining == Decimal("300.00")
+
+
 def test_money_rounds_half_up_to_cents():
     assert money("1.005", "amount") == Decimal("1.01")
     assert money("1.004", "amount") == Decimal("1.00")
@@ -60,8 +77,6 @@ def test_money_rejects_invalid_values(value):
         money(value, "amount")
 
 
-def test_requires_all_categories():
-    incomplete = dict(CATEGORIES)
-    del incomplete["運"]
-    with pytest.raises(ValidationError, match="運"):
-        calculate_budget(incomplete, datetime(2026, 6, 21))
+def test_requires_non_empty_categories():
+    with pytest.raises(ValidationError, match="must not be empty"):
+        calculate_budget({}, datetime(2026, 6, 21))

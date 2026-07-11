@@ -3,8 +3,8 @@
 var NOTIFY_HUB = {
   sheetId: 543845934,
   stateKey: 'NOTIFY_HUB_LAST_SUCCESS',
-  categoryNames: ['交', '食', '日', '保險', '運'],
-  categoryRange: 'P2:Q7',
+  categoryStartRow: 2,
+  categoryNameColumn: 16,
   retryDelaysMs: [0, 1000, 2000]
 };
 
@@ -12,10 +12,10 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Notify Hub')
     .addItem(
-      '安裝觸發器並立即推播',
+      '\u5b89\u88dd\u89f8\u767c\u5668\u4e26\u7acb\u5373\u63a8\u64ad',
       'installNotifyHub'
     )
-    .addItem('立即推播', 'sendNow')
+    .addItem('\u7acb\u5373\u63a8\u64ad', 'sendNow')
     .addToUi();
 }
 
@@ -52,7 +52,8 @@ function installNotifyHub() {
 
   processBudgetSummary_(true);
   SpreadsheetApp.getUi().alert(
-    'Notify Hub 已安裝並完成首次推播。'
+    'Notify Hub ' +
+    '\u5df2\u5b89\u88dd\u4e26\u5b8c\u6210\u9996\u6b21\u63a8\u64ad\u3002'
   );
 }
 
@@ -118,27 +119,20 @@ function readBudgetSummary_() {
   var totals = sheet
     .getRange('M2:O2')
     .getValues()[0];
-  var rows = sheet
-    .getRange(NOTIFY_HUB.categoryRange)
-    .getValues();
+  var rows = readCategoryRows_(sheet);
   var categories = {};
   var seen = {};
 
   rows.forEach(function(row, index) {
     var actual = String(row[0]).trim();
     var value = row[1];
-    var rowNumber = index + 2;
+    var rowNumber = index + NOTIFY_HUB.categoryStartRow;
 
     if (!actual) {
       return;
     }
-    if (actual === '分類' || actual === 'Category') {
+    if (actual === '\u5206\u985e' || actual === 'Category') {
       return;
-    }
-    if (NOTIFY_HUB.categoryNames.indexOf(actual) === -1) {
-      throw new Error(
-        'Unknown category at row ' + rowNumber + ': ' + actual
-      );
     }
     if (seen[actual]) {
       throw new Error(
@@ -154,11 +148,9 @@ function readBudgetSummary_() {
     );
   });
 
-  NOTIFY_HUB.categoryNames.forEach(function(name) {
-    if (!seen[name]) {
-      categories[name] = 0;
-    }
-  });
+  if (Object.keys(categories).length === 0) {
+    throw new Error('No budget categories were found.');
+  }
 
   return {
     type: 'budget_summary',
@@ -176,6 +168,24 @@ function readBudgetSummary_() {
     ),
     categories: categories
   };
+}
+
+function readCategoryRows_(sheet) {
+  var lastRow = sheet.getLastRow();
+  var startRow = NOTIFY_HUB.categoryStartRow;
+  if (lastRow < startRow) {
+    return [];
+  }
+
+  var rowCount = lastRow - startRow + 1;
+  return sheet
+    .getRange(
+      startRow,
+      NOTIFY_HUB.categoryNameColumn,
+      rowCount,
+      2
+    )
+    .getValues();
 }
 
 function roundMoney_(value, cellName) {
@@ -243,15 +253,15 @@ function postNotification_(payload) {
         throw new Error(message);
       }
       lastError = new Error(message);
-    } catch (error) {
-      var errorText = String(error.message || '');
+    } catch (err) {
+      var errorText = String(err.message || '');
       var clientError = errorText.indexOf(
         'notify-hub HTTP 4'
       ) === 0;
       if (clientError) {
-        throw error;
+        throw err;
       }
-      lastError = error;
+      lastError = err;
     }
   }
 

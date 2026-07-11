@@ -16,6 +16,7 @@ VALID_PAYLOAD = {
         "交": 126,
         "食": 372.14,
         "日": 167.51,
+        "住": 0,
         "保險": 5.8,
         "運": 64.97,
     },
@@ -69,6 +70,7 @@ def test_notify_formats_and_sends_confirmed_message(client, sender):
     assert sender.calls[0][0] == "999"
     text = sender.calls[0][1]
     assert "第 3 週累積額度：€300.00" in text
+    assert "住：€0.00" in text
     assert "累積已花費（日+食）：€539.65" in text
     assert "週預算剩餘：-€239.65 ⚠️ 已超支" in text
     assert "更新時間：2026-06-21 18:30" in text
@@ -84,7 +86,7 @@ def test_rejects_wrong_secret(client, sender):
 
 def test_rejects_invalid_payload(client, sender):
     payload = dict(VALID_PAYLOAD)
-    payload["categories"] = {"交": 1}
+    payload["categories"] = {"交": "not-a-number"}
     response = client.post(
         "/notify",
         json=payload,
